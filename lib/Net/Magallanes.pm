@@ -4,22 +4,251 @@ use strict;
 use 5.008_005;
 our $VERSION = '0.01';
 
+use LWP::UserAgent;
+use JSON;
+use MIME::Base64;
+use Net::DNS;
+use Carp;
+
+sub new {
+    my $this = shift;
+    my %params = @_;
+
+    my $API_KEY;
+    my $API_BASE = 'https://atlas.ripe.net/api/v2';
+    my $one_off  = 'true';
+
+    my $class = ref($this) || $this;
+
+    if ($params{'KEY'}) {
+        $API_KEY = $params{'KEY'};
+    }
+
+    # armar estructura con defaults sensibles
+    my $self = {};
+    bless $self, $class;
+
+    # Si no hay KEY igual le damos, pero no podremos crear cosas, solo
+    # consultar.
+    $self->{'KEY'} = $API_KEY;
+    $self->{'ua'}  = LWP::UserAgent->new(timeout => 10);
+    $self->{'ua'}->default_header('Content-Type' => 'application/json');
+    $self->{'ua'}->default_header('Accept' => 'application/json');
+    $self->{'URL'} = $API_BASE;
+
+    $self->{'_CACHE_MSM'} = {};
+
+    # Qué puede venir:
+    # timeouts de https request
+    # versión de API
+    # defaults comunes a todo:
+    #   - one_off (default true)
+
+    return $self;
+}
+
+sub results {
+    my $self   = shift;
+    my $msm_id = shift;
+
+    my $result;
+
+    croak("You must provide the measurement identificator msm_id (only digits)")
+        unless defined $msm_id and $msm_id =~ /^\d+$/;
+
+    return $self->{'_CACHE_MSM'}->{$msm_id}
+        if defined $self->{'_CACHE_MSM'}->{$msm_id};
+
+    my $res = $self->{'ua'}->get( $self->{'URL'} .
+        "/measurements/$msm_id/results/" .
+        '?format=json'
+    );
+
+    if ($res->is_success) {
+        $result = decode_json $res->decoded_content;
+    }
+    else {
+        $result = 'ERROR: ' . $res->status_line;
+    }
+
+    $self->{'_CACHE_MSM'}->{$msm_id} = $result;
+
+    return $result;
+}
+
+sub answers {
+    my $self   = shift;
+    my $msm_id = shift;
+
+    my $result = results($self, $msm_id);
+
+    my @sal;
+    foreach my $resdo (@{$result}) {
+        if ($resdo->{'type'} eq 'dns') {
+            my $res_set = $resdo->{'resultset'};
+            foreach my $dns (@$res_set) {
+                my $abuf = $dns->{'result'}->{'abuf'};
+                next unless $abuf;
+                my $dec_buff = decode_base64 $abuf;
+                if(defined $abuf && defined $dec_buff) {
+                    my ($dns_pack)= new Net::DNS::Packet(\$dec_buff);
+                    my @ans = $dns_pack->answer;
+                    foreach my $ans (@ans) {
+                        my $res_ip = $ans->address;
+                        push @sal, $res_ip if $res_ip;
+                    }
+                }
+            }
+        }
+    }
+    return @sal;
+}
+
+sub nsids {
+    my $self   = shift;
+    my $msm_id = shift;
+
+    my $result = results($self, $msm_id);
+
+    my @sal;
+    foreach my $resdo (@{$result}) {
+        if ($resdo->{'type'} eq 'dns') {
+            my $res_set = $resdo->{'resultset'};
+            foreach my $dns (@$res_set) {
+                my $abuf = $dns->{'result'}->{'abuf'};
+                next unless $abuf;
+                my $dec_buff = decode_base64 $abuf;
+                if(defined $abuf && defined $dec_buff) {
+                    my ($dns_pack)= new Net::DNS::Packet(\$dec_buff);
+                    my @edns = $dns_pack->edns;
+                    foreach my $edn (@edns) {
+                        my $res_ip = $edn->option(3);
+                        push @sal, ($res_ip ? $res_ip : 'NULL');
+                    }
+                }
+            }
+        }
+    }
+    return @sal;
+}
+
+sub dns {
+    my $self = shift;
+    my %params = @_;
+
+    croak("You must provide at least the query name")
+        unless defined $params{'name'};
+    croak('You must provide an API key (KEY constructor param) to create measurements')
+        unless defined $self->{'KEY'} and $self->{'KEY'};
+
+    my $qtype = defined($params{'type'}) ? $params{'type'} : 'AAAA';
+    my $nprb  = defined($params{'num_prb'}) ? $params{'num_prb'} : 5;
+
+    my %DEFS = (
+        description         => 'DNS measurement to ',
+        type                => 'dns',
+        query_class         => 'IN',
+        timeout             => 5000,
+        retry               => 0,
+        af                  => 4,
+        use_macros          => 'false',
+        use_probe_resolver  => 'true',
+        resolve_on_probe    => 'false',
+        set_nsid_bit        => 'true',
+        protocol            => 'UDP',
+        udp_payload_size    => 512,
+        skip_dns_check      => 'false',
+        include_qbuf        => 'false',
+        include_abuf        => 'true',
+        prepend_probe_id    => 'false',
+        set_rd_bit          => 'false',
+        set_do_bit          => 'false',
+        set_cd_bit          => 'false',
+        # start_time
+        # stop_time
+        # interval
+        # target
+    );
+
+    my %PROBES = (
+        type         => 'area',
+        value        => 'WW',
+        # tags_include => 'system-ipv4-works,system-can-resolve-a',
+        tags_include => 'system-ipv4-works',
+    );
+
+    $PROBES{'requested'}    = $nprb;
+
+    $DEFS{'query_argument'} = $params{'name'};
+    $DEFS{'query_type'}     = $qtype;
+    $DEFS{'description'}   .= $params{'name'};
+
+    my %ATLASCALL;
+    push @{$ATLASCALL{'definitions'}}, \%DEFS;
+    push @{$ATLASCALL{'probes'}}, \%PROBES;
+
+    $ATLASCALL{'is_oneoff'} = 'true';
+
+    my $json = encode_json \%ATLASCALL;
+
+    warn $json;
+
+    my $res = $self->{'ua'}->post( $self->{'URL'} .
+        '/measurements/' .
+        '?key=' . $self->{'KEY'},
+        Content => $json
+    );
+    warn $self->{'URL'} .
+        '/measurements/' .
+        '?key=' . $self->{'KEY'};
+
+    if ($res->is_success) {
+        my $msmout = $res->decoded_content;
+        my $msm = $1 if $res->decoded_content =~ /{"measurements":\[(\d+)\]}/;
+
+        croak 'Bad measurement id, please check: ' . $res->decoded_content unless $msm;
+
+        return $msm;
+    }
+    else {
+        croak 'Could not create a measurement: ' . $res->status_line;
+    }
+}
+
 1;
+
 __END__
 
 =encoding utf-8
 
 =head1 NAME
 
-Net::Magallanes - Blah blah blah
+Net::Magallanes - encapsulation of API calls to RIPE Atlas project.
 
 =head1 SYNOPSIS
 
   use Net::Magallanes;
 
+  my $atlas = new Net::Magallanes (
+      KEY => '<YOUR_API_KEY>'
+  );
+
+  my $msm_id = $atlas->dns(
+      name    =>  'www.vulcano.cl',
+      type    =>  'SRV',
+      num_prb =>  10,
+  );
+
+  my $result = $atlas->results($msm_id);
+  say "Response is ", $result;
+
+
 =head1 DESCRIPTION
 
-Net::Magallanes is
+Net::Magallanes is a pure perl interface to the RIPE Atlas API,
+for requesting measurements and getting data from past measurements.
+
+More information on RIPE Atlas platform: atlas.ripe.net
 
 =head1 AUTHOR
 
@@ -37,3 +266,5 @@ it under the same terms as Perl itself.
 =head1 SEE ALSO
 
 =cut
+
+
