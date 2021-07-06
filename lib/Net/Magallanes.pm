@@ -14,15 +14,13 @@ sub new {
     my $this = shift;
     my %params = @_;
 
-    my $API_KEY;
+    my ($API_KEY, $IN_FILES);
     my $API_BASE = 'https://atlas.ripe.net/api/v2';
-    my $one_off  = 'true';
 
     my $class = ref($this) || $this;
 
-    if ($params{'KEY'}) {
-        $API_KEY = $params{'KEY'};
-    }
+    $API_KEY = $params{'KEY'} if $params{'KEY'};
+    $IN_FILES = $params{'INFILES'} if $params{'INFILES'};
 
     # armar estructura con defaults sensibles
     my $self = {};
@@ -37,6 +35,21 @@ sub new {
     $self->{'URL'} = $API_BASE;
 
     $self->{'_CACHE_MSM'} = {};
+
+    if ($IN_FILES) {
+        my @files = split ',', $IN_FILES;
+        my $data;
+        foreach my $file (@files) {
+            open my $fh, '<', $file
+                or croak "Couldn't open file $file: $!";
+            local $/ = undef;
+            $data = <$fh>;
+            close $fh;
+            my $result = decode_json $data;
+            my $mi = $result->[0]->{msm_id};
+            $self->{'_CACHE_MSM'}->{$mi} = $result;
+        }
+    }
 
     # Qué puede venir:
     # timeouts de https request
@@ -64,6 +77,8 @@ sub results {
         '?format=json'
     );
 
+    $self->{'_JSON'} = $res->decoded_content;
+
     if ($res->is_success) {
         $result = decode_json $res->decoded_content;
     }
@@ -76,9 +91,18 @@ sub results {
     return $result;
 }
 
+sub json {
+    my $self = shift;
+
+    return $self->{'_JSON'};
+}
+
 sub answers {
     my $self   = shift;
     my $msm_id = shift;
+    my $type = shift;
+
+    $type = 'A' unless $type;
 
     my $result = results($self, $msm_id);
 
@@ -86,6 +110,9 @@ sub answers {
     foreach my $resdo (@{$result}) {
         if ($resdo->{'type'} eq 'dns') {
             my $res_set = $resdo->{'resultset'};
+            if ($#{$res_set} < 0) {
+                push @{$res_set}, $resdo;
+            }
             foreach my $dns (@$res_set) {
                 my $abuf = $dns->{'result'}->{'abuf'};
                 next unless $abuf;
@@ -94,7 +121,17 @@ sub answers {
                     my ($dns_pack)= new Net::DNS::Packet(\$dec_buff);
                     my @ans = $dns_pack->answer;
                     foreach my $ans (@ans) {
-                        my $res_ip = $ans->address;
+                        next unless $ans->type eq $type;
+                        my $res_ip;
+                        if ($type eq 'A') {
+                            $res_ip = $ans->address;
+                        }
+                        elsif ($type eq 'AAAA') {
+                            $res_ip = $ans->address_short;
+                        }
+                        else {
+                            $res_ip = $ans->string;
+                        }
                         push @sal, $res_ip if $res_ip;
                     }
                 }
@@ -114,6 +151,9 @@ sub nsids {
     foreach my $resdo (@{$result}) {
         if ($resdo->{'type'} eq 'dns') {
             my $res_set = $resdo->{'resultset'};
+            if ($#{$res_set} < 0) {
+                push @{$res_set}, $resdo;
+            }
             foreach my $dns (@$res_set) {
                 my $abuf = $dns->{'result'}->{'abuf'};
                 next unless $abuf;
@@ -125,6 +165,34 @@ sub nsids {
                         my $res_ip = $edn->option(3);
                         push @sal, ($res_ip ? $res_ip : 'NULL');
                     }
+                }
+            }
+        }
+    }
+    return @sal;
+}
+
+sub rcodes {
+    my $self   = shift;
+    my $msm_id = shift;
+
+    my $result = results($self, $msm_id);
+
+    my @sal;
+    foreach my $resdo (@{$result}) {
+        if ($resdo->{'type'} eq 'dns') {
+            my $res_set = $resdo->{'resultset'};
+            if ($#{$res_set} < 0) {
+                push @{$res_set}, $resdo;
+            }
+            foreach my $dns (@$res_set) {
+                my $abuf = $dns->{'result'}->{'abuf'};
+                next unless $abuf;
+                my $dec_buff = decode_base64 $abuf;
+                if(defined $abuf && defined $dec_buff) {
+                    my ($dns_pack)= new Net::DNS::Packet(\$dec_buff);
+                    my $header = $dns_pack->header;
+                    push @sal, $header->rcode;
                 }
             }
         }
@@ -162,7 +230,7 @@ sub dns {
         include_abuf        => 'true',
         prepend_probe_id    => 'false',
         set_rd_bit          => 'false',
-        set_do_bit          => 'false',
+        set_do_bit          => 'true',
         set_cd_bit          => 'false',
         # start_time
         # stop_time
@@ -191,16 +259,11 @@ sub dns {
 
     my $json = encode_json \%ATLASCALL;
 
-    warn $json;
-
     my $res = $self->{'ua'}->post( $self->{'URL'} .
         '/measurements/' .
         '?key=' . $self->{'KEY'},
         Content => $json
     );
-    warn $self->{'URL'} .
-        '/measurements/' .
-        '?key=' . $self->{'KEY'};
 
     if ($res->is_success) {
         my $msmout = $res->decoded_content;
