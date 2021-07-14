@@ -1,5 +1,5 @@
 {
-   "abstract" : "Blah blah blah",
+   "abstract" : "encapsulation of API calls to RIPE Atlas project.",
    "author" : [
       "Hugo Salgado <hsalgado@vulcano.cl>"
    ],
@@ -37,6 +37,12 @@
       },
       "runtime" : {
          "requires" : {
+            "Carp" : "0",
+            "JSON" : "0",
+            "LWP::Protocol::https" : "0",
+            "LWP::UserAgent" : "0",
+            "MIME::Base64" : "0",
+            "Net::DNS" : "0",
             "perl" : "5.008005"
          }
       },

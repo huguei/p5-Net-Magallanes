@@ -28,6 +28,18 @@ for requesting measurements and getting data from past measurements.
 
 More information on RIPE Atlas platform: atlas.ripe.net
 
+\*WARNING\*: This module is a "work in progress". By no means does it
+allow full API handling. Functionality will be added as needed. It is
+currently a minimal implementation, which works for the cases indicated
+in the documentation.
+
+# DESCRIPTION
+
+Net::Magallanes is a pure perl interface to the RIPE Atlas API,
+for requesting measurements and getting data from past measurements.
+
+More information on RIPE Atlas platform: atlas.ripe.net
+
 # METHODS
 
 ## new
@@ -35,18 +47,18 @@ More information on RIPE Atlas platform: atlas.ripe.net
 Creates a new Net::Magallanes object. There're two optional
 parameters:
 
-   KEY => '<Secret API Key for RIPE Atlas>'
+    KEY => '<Secret API Key for RIPE Atlas>'
 
 If you want to create new measurements, you must provide an API
 key for your RIPE Atlas account.
 
-   INFILES => '<path/filename>[,<morefiles>]'
+    INFILES => '<path/filename>[,<morefiles>]'
 
 If you want to use an existing JSON file with a previous measurement,
 instead of downloading one from Atlas API site. You can use more than
 one file, comma separated.
 
-## answers(<MSM-id> [, <qtype>])
+## answers(<MSM-id> \[, &lt;qtype>\])
 
 Get an array of answers from the previous measurement with id MSM-id.
 The "answers" are the records from the ANSWER section of a DNS
@@ -56,7 +68,6 @@ If you specify a qtype 'A' (default) or 'AAAA', you'll get an array of
 addresses from the corresponding answer. With other types you'll get an
 array with a printable representation of each answer.
 
-
 ## nsids(<MSM-id>)
 
 Get an array of NSID texts from the results of a previous measurement
@@ -64,17 +75,15 @@ MSM-id.
 
 If there's no NSID for a result, you'll get a 'NULL' string.
 
-
 ## rcodes
 
 Get an array of RCODE texts from the results of a previous measurement
 MSM-id.
 
-
-## dns( name => '<QNAME>' [, type => '<QTYPE>'] [, num_prb => '<NUM_PROBES'> ])
+## dns( name => '<QNAME>' \[, type => '<QTYPE>'\] \[, num\_prb => '<NUM\_PROBES'> \])
 
 Create a new "one-off" DNS measurement, asking for the name <QNAME>
-(required) and type <QTYPE> (AAAA default), from <NUM_PROBES> (default
+(required) and type <QTYPE> (AAAA default), from <NUM\_PROBES> (default
 5) probes at random, with worldwide coverage.
 
 You must had initialized the Net::Magallanes object with a valid API
@@ -88,7 +97,6 @@ asking for the results of this measurement.
 The measurement uses sensible parameters like DO bit set, 1232 EDNS
 buffer size, recursive towards the probe resolver, etc.
 
-
 # AUTHOR
 
 Hugo Salgado <hsalgado@vulcano.cl>
@@ -101,5 +109,3 @@ Copyright 2021- Hugo Salgado
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
-
-# SEE ALSO
