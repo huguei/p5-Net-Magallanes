@@ -224,7 +224,7 @@ sub dns {
         resolve_on_probe    => 'false',
         set_nsid_bit        => 'true',
         protocol            => 'UDP',
-        udp_payload_size    => 512,
+        udp_payload_size    => 1232,
         skip_dns_check      => 'false',
         include_qbuf        => 'false',
         include_abuf        => 'true',
