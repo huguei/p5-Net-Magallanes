@@ -58,15 +58,19 @@ If you want to use an existing JSON file with a previous measurement,
 instead of downloading one from Atlas API site. You can use more than
 one file, comma separated.
 
-## answers(<MSM-id> \[, &lt;qtype>\])
+## answers(<MSM-id> \[, { TYPE => &lt;qtype>, TIMESTAMP => 1 }\])
 
 Get an array of answers from the previous measurement with id MSM-id.
 The "answers" are the records from the ANSWER section of a DNS
 measurement.
 
-If you specify a qtype 'A' (default) or 'AAAA', you'll get an array of
-addresses from the corresponding answer. With other types you'll get an
-array with a printable representation of each answer.
+You can specify a qtype 'A' (default) or 'AAAA', and you'll get an array
+of addresses from the corresponding answer. With other types you'll get
+an array with a printable representation of each answer.
+
+If you ask for TIMESTAMP, then you'll have also the time when each
+measurement was done, as epoch seconds. The output will be an array of
+pairs (time, answer).
 
 ## nsids(<MSM-id>)
 
@@ -75,10 +79,14 @@ MSM-id.
 
 If there's no NSID for a result, you'll get a 'NULL' string.
 
-## rcodes
+## rcodes((<MSM-id> \[, { TIMESTAMP => 1 }\])
 
 Get an array of RCODE texts from the results of a previous measurement
 MSM-id.
+
+If you ask for TIMESTAMP, then you'll have also the time when each
+measurement was done, as epoch seconds. The output will be an array of
+pairs (time, answer).
 
 ## dns( name => '<QNAME>' \[, type => '<QTYPE>'\] \[, num\_prb => '<NUM\_PROBES'> \])
 
