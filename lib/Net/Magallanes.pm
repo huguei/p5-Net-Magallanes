@@ -291,8 +291,8 @@ sub dns {
     my $json = encode_json \%ATLASCALL;
 
     my $res = $self->{'ua'}->post( $self->{'URL'} .
-        '/measurements/' .
-        '?key=' . $self->{'KEY'},
+        '/measurements/',
+        'Authorization' => 'Key ' . $self->{'KEY'},
         Content => $json
     );
 
